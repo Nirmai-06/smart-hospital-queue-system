@@ -1,4 +1,4 @@
-# Hospital Queue Management System
+# Hospital Queue System
 
 A modern, user-friendly Hospital Queue Management System designed to reduce waiting time, streamline patient flow, and improve hospital efficiency through real-time queue tracking.
 
