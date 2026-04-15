@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RestorativeFlow Health — Queue System</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { "headline": ["Manrope"], "body": ["Inter"] },
+      borderRadius: { "2xl":"1rem","3xl":"1.5rem","4xl":"2rem" }
+    }
+  }
+}
+</script>
+<style>
+:root {
+  --pri:#005dac;--pri-c:#1976d2;--sec:#1b6d24;--err:#ba1a1a;
+  --surf:#f4faff;--scl:#e6f6ff;--scll:#ffffff;--sch:#c9e7f7;
+  --os:#001f2a;--osv:#414752;--sf:#a3f69c;--tf:#ffdad6;
+  --pf:#d4e3ff;--pfd:#a5c8ff;--ec:#ffdad6;--ov:#c1c6d4;
+}
+*{box-sizing:border-box;}
+body{font-family:'Inter',sans-serif;background:var(--surf);color:var(--os);margin:0;}
+.mi{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;vertical-align:middle;font-family:'Material Symbols Outlined';}
+.mif{font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;font-family:'Material Symbols Outlined';}
+.glass{backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);background:rgba(255,255,255,.65);}
+.grad{background:linear-gradient(135deg,var(--pri),var(--pri-c));}
+.pulse-red{animation:pr 2s infinite;}
+@keyframes pr{0%,100%{background-color:rgba(186,26,26,.1)}50%{background-color:rgba(186,26,26,.25)}}
+.fade-in{animation:fi .3s ease;}
+@keyframes fi{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.page{display:none;}
+.page.active{display:block;}
+.prog-bar{transition:width .8s cubic-bezier(.4,0,.2,1);}
+::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#c9e7f7;border-radius:10px;}
+.nav-act{background:white;color:var(--pri)!important;box-shadow:0 1px 4px rgba(0,0,0,.08);}
+.nav-act .mi,.nav-act .mif{color:var(--pri)!important;}
+.tab-act{background:var(--pri)!important;color:white!important;}
+.tog-on{background:var(--sec)!important;}
+.tog-on .knob{transform:translateX(1.25rem);}
+.token-pop{animation:tp .5s cubic-bezier(.36,.07,.19,.97);}
+@keyframes tp{0%,100%{transform:scale(1)}30%{transform:scale(1.1)}60%{transform:scale(.96)}}
+.qi{animation:qi .25s ease;}
+@keyframes qi{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.hosp-c{transition:all .2s ease;cursor:pointer;}
+.hosp-c:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,93,172,.1);}
+.doc-c{transition:all .15s ease;}
+.doc-c:hover{transform:translateY(-1px);}
+.notif{animation:ns .35s ease;}
+@keyframes ns{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
+input:focus,select:focus{outline:none;border-color:var(--pri)!important;}
+.pill-act{background:var(--pri)!important;color:white!important;}
+.dept-sel{background:var(--pri)!important;color:white!important;}
+</style>
+</head>
+<body>
+
+<!-- STATE & DATA -->
+<script>
+const APP = {
+  role:'patient', page:'home',
+  selectedHospital:null, selectedDoctor:null,
+  myToken:null, activeDoctorId:null,
+  seenCount:0, hospFilter:'all', deptFilter:'all',
+  avgTime:5, _nt:null,
+
+  hospitals:[
+    {id:1,name:'City Medical Center',addr:'12, Anna Salai, Chennai',dist:'0.8 km',rating:4.8,open:true,depts:['Cardiology','ENT','Orthopedics','General']},
+    {id:2,name:'Apollo Specialty',addr:'21, Greams Rd, Chennai',dist:'1.4 km',rating:4.6,open:true,depts:['Neurology','Pediatrics','Ophthalmology','General']},
+    {id:3,name:'Fortis Health',addr:'7, Rajiv Gandhi Rd, Chennai',dist:'2.1 km',rating:4.4,open:true,depts:['Cardiology','Radiology','Pediatrics','ENT']},
+    {id:4,name:'MIOT International',addr:'4/112, Mount Poonamalle Rd',dist:'3.5 km',rating:4.7,open:true,depts:['Orthopedics','Neurology','Cardiology','General']},
+    {id:5,name:'Vijaya Hospital',addr:'434, N.S.K. Salai, Vadapalani',dist:'4.2 km',rating:4.3,open:false,depts:['General','ENT','Ophthalmology']}
+  ],
+
+  doctors:[
+    {id:1,hid:1,name:'Dr. Priya Sharma',dept:'Cardiology',exp:'12 yrs',avail:true,paused:false,queue:[],cur:null,nxt:null,tc:100,rating:4.9,seen:14},
+    {id:2,hid:1,name:'Dr. Arun Mehta',dept:'ENT',exp:'8 yrs',avail:true,paused:false,queue:[],cur:null,nxt:null,tc:200,rating:4.7,seen:9},
+    {id:3,hid:1,name:'Dr. Latha Krishnan',dept:'Orthopedics',exp:'15 yrs',avail:false,paused:false,queue:[],cur:null,nxt:null,tc:300,rating:4.8,seen:0},
+    {id:4,hid:1,name:'Dr. Raj Patel',dept:'General',exp:'6 yrs',avail:true,paused:false,queue:[],cur:null,nxt:null,tc:400,rating:4.5,seen:11},
+    {id:5,hid:2,name:'Dr. Kavitha Nair',dept:'Neurology',exp:'10 yrs',avail:true,paused:false,queue:[],cur:null,nxt:null,tc:500,rating:4.8,seen:7},
+    {id:6,hid:2,name:'Dr. Sanjay Verma',dept:'Pediatrics',exp:'9 yrs',avail:true,paused:false,queue:[],cur:null,nxt:null,tc:600,rating:4.6,seen:12},
+    {id:7,hid:2,name:'Dr. Divya Rao',dept:'Ophthalmology',exp:'7 yrs',avail:false,paused:false,queue:[],cur:null,nxt:null,tc:700,rating:4.4,seen:0},
+    {id:8,hid:3,name:'Dr. Farhan Khan',dept:'Cardiology',exp:'11 yrs',avail:true,paused:true,queue:[],cur:null,nxt:null,tc:800,rating:4.7,seen:8},
+    {id:9,hid:4,name:'Dr. Meera Nambiar',dept:'Orthopedics',exp:'14 yrs',avail:true,paused:false,queue:[],cur:null,nxt:null,tc:900,rating:4.9,seen:16}
+  ],
+
+  init(){
+    const names=['Ravi K.','Sunita M.','Arjun P.','Meena S.','Vijay T.','Anita R.','Kiran B.','Suresh N.'];
+    this.doctors.forEach(d=>{
+      if(d.avail){
+        const n=Math.floor(Math.random()*4)+1;
+        for(let i=0;i<n;i++){
+          d.tc++;
+          d.queue.push({token:d.tc,name:names[Math.floor(Math.random()*names.length)],joinedAt:Date.now()-(n-i)*4*60000});
+        }
+        d.cur=d.queue[0]?.token||null;
+        d.nxt=d.queue[1]?.token||null;
+      }
+    });
+  },
+  doc(id){return this.doctors.find(d=>d.id===id);},
+  estWait(docId,pos){return pos*this.avgTime;},
+  deptIcon(dept){
+    return {Cardiology:'favorite',ENT:'hearing',Orthopedics:'orthopedics',General:'local_hospital',
+      Neurology:'neurology',Pediatrics:'child_care',Ophthalmology:'visibility',Radiology:'radiology'}[dept]||'medical_services';
+  }
+};
+APP.init();
+</script>
+
+<!-- SIDEBAR -->
+<aside id="sidebar" class="h-screen w-64 fixed left-0 top-0 hidden lg:flex flex-col border-r z-40 p-4 gap-2" style="background:#fff;border-color:var(--scl);">
+  <div class="flex items-center gap-3 px-2 mb-5 mt-2">
+    <div class="w-10 h-10 rounded-xl grad flex items-center justify-center text-white shadow-sm">
+      <span class="mif text-lg" style="font-size:1.2rem;">medical_services</span>
+    </div>
+    <div>
+      <h2 class="text-sm font-bold" style="font-family:'Manrope';color:var(--os);">RestorativeFlow</h2>
+      <p class="text-[10px] font-medium uppercase tracking-wide" style="color:var(--osv);">Health Queue System</p>
+    </div>
+  </div>
+
+  <div class="flex rounded-2xl p-1 mb-3" style="background:var(--scl);">
+    <button onclick="setRole('patient')" id="rP" class="flex-1 py-2 rounded-xl text-xs font-bold transition-all tab-act" style="font-family:'Manrope';">Patient</button>
+    <button onclick="setRole('doctor')" id="rD" class="flex-1 py-2 rounded-xl text-xs font-bold transition-all" style="font-family:'Manrope';color:var(--osv);">Doctor</button>
+  </div>
+
+  <nav class="flex-1 flex flex-col gap-1">
+    <div id="pNav">
+      <button onclick="go('home')" data-p="home" class="nbtn nav-act flex items-center gap-3 px-4 py-3 rounded-xl w-full text-left transition-all" style="font-size:.875rem;color:var(--osv);">
+        <span class="mi text-lg">search</span><span class="font-medium">Find Hospital</span>
+      </button>
+      <button onclick="go('doctors')" data-p="doctors" class="nbtn flex items-center gap-3 px-4 py-3 rounded-xl w-full text-left transition-all" style="font-size:.875rem;color:var(--osv);">
+        <span class="mi text-lg">groups</span><span class="font-medium">Doctors</span>
+      </button>
+      <button onclick="go('myqueue')" data-p="myqueue" class="nbtn flex items-center gap-3 px-4 py-3 rounded-xl w-full text-left transition-all" style="font-size:.875rem;color:var(--osv);">
+        <span class="mi text-lg">confirmation_number</span><span class="font-medium">My Queue</span>
+        <span id="tkBadgeSb" class="hidden ml-auto text-xs font-bold px-2 py-0.5 rounded-full grad text-white">1</span>
+      </button>
+    </div>
+    <div id="dNav" class="hidden">
+      <button onclick="go('docDash')" data-p="docDash" class="nbtn nav-act flex items-center gap-3 px-4 py-3 rounded-xl w-full text-left transition-all" style="font-size:.875rem;color:var(--osv);">
+        <span class="mi text-lg">dashboard</span><span class="font-medium">Dashboard</span>
+      </button>
+      <button onclick="go('docQueue')" data-p="docQueue" class="nbtn flex items-center gap-3 px-4 py-3 rounded-xl w-full text-left transition-all" style="font-size:.875rem;color:var(--osv);">
+        <span class="mi text-lg">queue</span><span class="font-medium">My Queue</span>
+      </button>
+    </div>
+  </nav>
+  <div class="flex flex-col gap-1 pt-3" style="border-top:1px solid var(--scl);">
+    <div class="px-4 py-2 text-xs rounded-xl flex items-center gap-2" style="color:var(--osv);">
+      <span class="mi text-sm">lock</span>HIPAA Compliant · Secure
+    </div>
+  </div>
+</aside>
+
+<!-- TOPBAR -->
+<header class="fixed top-0 right-0 left-0 lg:left-64 z-30 glass border-b flex justify-between items-center px-5 h-16" style="border-color:rgba(193,198,212,.2);">
+  <div class="flex items-center gap-3">
+    <button onclick="openMobileMenu()" class="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl" style="color:var(--osv);">
+      <span class="mi">menu</span>
+    </button>
+    <h1 id="pgTitle" class="text-lg font-bold" style="font-family:'Manrope';background:linear-gradient(135deg,#1d4ed8,var(--pri));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Find Hospital</h1>
+  </div>
+  <div class="flex items-center gap-3">
+    <span id="clk" class="hidden md:block text-xs font-medium tabular-nums" style="color:var(--osv);"></span>
+    <button class="w-9 h-9 flex items-center justify-center rounded-full" style="color:var(--osv);" onclick="toast('Real-time updates active','info')">
+      <span class="mi">notifications</span>
+    </button>
+    <div onclick="setRole(APP.role==='patient'?'doctor':'patient')" class="w-8 h-8 rounded-full grad flex items-center justify-center text-white text-xs font-bold shadow cursor-pointer">
+      <span id="ava">P</span>
+    </div>
+  </div>
+</header>
+
+<!-- Mobile sidebar overlay -->
+<div id="mOv" onclick="closeMobileMenu()" class="fixed inset-0 bg-black/30 z-30 hidden lg:hidden"></div>
+<div id="mSb" class="fixed left-0 top-0 h-screen w-64 bg-white z-40 p-4 flex-col hidden" style="transform:translateX(-100%);transition:transform .28s ease;">
+  <div class="flex items-center justify-between mb-4 mt-1">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-xl grad flex items-center justify-center text-white"><span class="mif" style="font-size:1rem;">medical_services</span></div>
+      <span class="font-bold text-sm" style="font-family:'Manrope';color:var(--os);">RestorativeFlow</span>
+    </div>
+    <button onclick="closeMobileMenu()" style="color:var(--osv);"><span class="mi">close</span></button>
+  </div>
+  <div class="flex rounded-2xl p-1 mb-3" style="background:var(--scl);">
+    <button onclick="setRole('patient');closeMobileMenu()" id="mrP" class="flex-1 py-2 rounded-xl text-xs font-bold tab-act" style="font-family:'Manrope';">Patient</button>
+    <button onclick="setRole('doctor');closeMobileMenu()" id="mrD" class="flex-1 py-2 rounded-xl text-xs font-bold" style="font-family:'Manrope';color:var(--osv);">Doctor</button>
+  </div>
+  <nav id="mNavLinks" class="flex flex-col gap-1"></nav>
+</div>
+
+<!-- TOAST -->
+<div id="toastEl" class="fixed top-20 right-4 z-50 hidden notif max-w-xs">
+  <div id="toastIn" class="flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border" style="background:white;border-color:var(--scl);">
+    <span id="toastIco" class="mif text-xl" style="color:var(--pri);">info</span>
+    <span id="toastMsg" class="text-sm font-medium" style="color:var(--os);"></span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<main class="lg:ml-64 pt-16 min-h-screen pb-20 lg:pb-4">
+
+<!-- PAGE: HOME -->
+<div id="page-home" class="page active fade-in" style="padding:1.75rem 1.25rem;max-width:60rem;margin:0 auto;">
+  <div class="mb-6">
+    <h2 class="font-bold text-3xl mb-1" style="font-family:'Manrope';color:var(--os);">Find Care Near You</h2>
+    <p class="text-sm" style="color:var(--osv);">Real-time doctor availability · Live queue status</p>
+  </div>
+  <div class="relative mb-5">
+    <span class="mi absolute left-4 top-1/2 -translate-y-1/2" style="color:var(--osv);">search</span>
+    <input id="hSearch" oninput="renderHosp()" type="text" placeholder="Search hospital or department..."
+      class="w-full h-14 rounded-2xl pl-12 pr-12 text-base font-medium transition-all"
+      style="background:var(--scll);border:2px solid var(--scl);color:var(--os);"/>
+    <span class="mi absolute right-4 top-1/2 -translate-y-1/2" style="color:var(--osv);">near_me</span>
+  </div>
+  <div class="flex gap-2 mb-5 flex-wrap">
+    <button onclick="hFilter('all')" id="hf-all" class="fpill px-4 py-1.5 rounded-full text-xs font-bold transition-all pill-act" style="font-family:'Manrope';">All</button>
+    <button onclick="hFilter('open')" id="hf-open" class="fpill px-4 py-1.5 rounded-full text-xs font-bold transition-all" style="background:var(--scl);color:var(--osv);font-family:'Manrope';">Open Now</button>
+    <button onclick="hFilter('cardiology')" id="hf-cardiology" class="fpill px-4 py-1.5 rounded-full text-xs font-bold transition-all" style="background:var(--scl);color:var(--osv);font-family:'Manrope';">Cardiology</button>
+    <button onclick="hFilter('pediatrics')" id="hf-pediatrics" class="fpill px-4 py-1.5 rounded-full text-xs font-bold transition-all" style="background:var(--scl);color:var(--osv);font-family:'Manrope';">Pediatrics</button>
+    <button onclick="hFilter('ent')" id="hf-ent" class="fpill px-4 py-1.5 rounded-full text-xs font-bold transition-all" style="background:var(--scl);color:var(--osv);font-family:'Manrope';">ENT</button>
+    <button onclick="hFilter('neurology')" id="hf-neurology" class="fpill px-4 py-1.5 rounded-full text-xs font-bold transition-all" style="background:var(--scl);color:var(--osv);font-family:'Manrope';">Neurology</button>
+  </div>
+  <div id="hospList" class="flex flex-col gap-4"></div>
+</div>
+
+<!-- PAGE: DOCTORS -->
+<div id="page-doctors" class="page fade-in" style="padding:1.75rem 1.25rem;max-width:60rem;margin:0 auto;">
+  <div class="flex items-center gap-3 mb-5">
+    <button onclick="go('home')" class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:var(--scl);color:var(--pri);"><span class="mi">arrow_back</span></button>
+    <div>
+      <h2 class="font-bold text-2xl" style="font-family:'Manrope';color:var(--os);" id="dpTitle">Doctors</h2>
+      <p class="text-xs" style="color:var(--osv);" id="dpSub">Select a doctor to join queue</p>
+    </div>
+  </div>
+  <div id="deptPills" class="flex gap-2 mb-5 overflow-x-auto pb-1"></div>
+  <div id="docList" class="flex flex-col gap-4"></div>
+</div>
+
+<!-- PAGE: MY QUEUE -->
+<div id="page-myqueue" class="page fade-in" style="min-height:calc(100vh - 64px);">
+  <div style="min-height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center;padding:2rem 1.25rem;background:radial-gradient(circle at top left,var(--surf),var(--scl));">
+    <div id="noTk" class="text-center" style="max-width:20rem;width:100%;">
+      <div class="w-20 h-20 rounded-3xl mx-auto mb-5 flex items-center justify-center" style="background:var(--scl);">
+        <span class="mi" style="font-size:2.5rem;color:var(--ov);">confirmation_number</span>
+      </div>
+      <h2 class="font-bold text-2xl mb-2" style="font-family:'Manrope';color:var(--os);">No Active Token</h2>
+      <p class="text-sm mb-6" style="color:var(--osv);">Join a queue to track your position here.</p>
+      <button onclick="go('home')" class="px-8 py-3 rounded-2xl grad text-white font-bold text-sm shadow-lg" style="font-family:'Manrope';">Find a Doctor</button>
+    </div>
+    <div id="hasTk" class="hidden" style="width:100%;max-width:22rem;">
+      <div class="rounded-3xl p-7 shadow-sm mb-4" style="background:var(--scll);">
+        <div class="text-center mb-5">
+          <p class="text-xs font-bold uppercase tracking-widest mb-2" style="color:var(--osv);letter-spacing:.2em;">Your Token</p>
+          <h1 id="tkNum" class="font-bold token-pop" style="font-family:'Manrope';font-size:5rem;line-height:1;color:var(--pri);margin-bottom:.25rem;">—</h1>
+          <p class="text-sm" style="color:var(--osv);" id="tkDoc">—</p>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.25rem;">
+          <div class="rounded-2xl p-3 text-center" style="background:var(--scl);">
+            <p style="font-size:.625rem;color:var(--osv);font-weight:500;margin-bottom:.2rem;">Position</p>
+            <p class="font-bold text-lg" style="font-family:'Manrope';color:var(--os);" id="tkPos">—</p>
+          </div>
+          <div class="rounded-2xl p-3 text-center" style="background:var(--scl);">
+            <p style="font-size:.625rem;color:var(--osv);font-weight:500;margin-bottom:.2rem;">Est. Wait</p>
+            <p class="font-bold text-lg" style="font-family:'Manrope';color:var(--os);" id="tkWait">—</p>
+          </div>
+          <div class="rounded-2xl p-3 text-center" style="background:var(--scl);">
+            <p style="font-size:.625rem;color:var(--osv);font-weight:500;margin-bottom:.2rem;">Serving</p>
+            <p class="font-bold text-lg" style="font-family:'Manrope';color:var(--os);" id="tkServ">—</p>
+          </div>
+        </div>
+        <div style="margin-bottom:1.25rem;">
+          <div style="display:flex;justify-content:space-between;font-size:.75rem;color:var(--osv);margin-bottom:.4rem;">
+            <span>Progress</span><span id="pgPct">0%</span>
+          </div>
+          <div style="height:.75rem;border-radius:9999px;background:var(--scl);overflow:hidden;">
+            <div id="pgBar" class="prog-bar" style="height:100%;border-radius:9999px;background:linear-gradient(90deg,var(--pri),var(--pri-c));width:0%;"></div>
+          </div>
+        </div>
+        <div class="rounded-2xl p-4" style="background:var(--scl);">
+          <h3 class="font-bold text-sm mb-3" style="font-family:'Manrope';color:var(--os);">Your Journey</h3>
+          <div id="tkTimeline" class="flex flex-col gap-2"></div>
+        </div>
+      </div>
+      <div class="flex flex-col gap-3">
+        <button onclick="leaveQ()" class="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2" style="background:var(--ec);color:var(--err);font-family:'Manrope';">
+          <span class="mi text-lg">exit_to_app</span>Leave Queue
+        </button>
+        <button onclick="go('home')" class="w-full py-3.5 rounded-2xl font-bold text-sm" style="background:var(--scl);color:var(--os);font-family:'Manrope';">Find Another Doctor</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE: DOCTOR DASHBOARD -->
+<div id="page-docDash" class="page fade-in" style="padding:1.75rem 1.25rem;max-width:60rem;margin:0 auto;">
+  <div class="mb-5">
+    <h2 class="font-bold text-2xl mb-1" style="font-family:'Manrope';color:var(--os);">Doctor Portal</h2>
+    <p class="text-sm" style="color:var(--osv);">Select your profile to manage your queue</p>
+  </div>
+  <select id="docSel" onchange="pickDoc()" class="w-full h-12 rounded-2xl px-4 text-sm font-medium border-2 mb-5 transition-all" style="background:var(--scll);border-color:var(--scl);color:var(--os);">
+    <option value="">— Select Doctor Profile —</option>
+  </select>
+  <div id="ddContent" class="hidden">
+    <!-- Profile Card -->
+    <div class="rounded-3xl p-6 mb-5 relative overflow-hidden" style="background:var(--scll);">
+      <div style="position:absolute;right:-2rem;top:-2rem;width:8rem;height:8rem;border-radius:9999px;background:var(--pri);opacity:.04;"></div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;position:relative;z-index:1;">
+        <div style="display:flex;align-items:center;gap:1rem;">
+          <div id="ddInit" class="w-14 h-14 rounded-2xl grad flex items-center justify-center text-white text-xl font-bold shadow-lg" style="font-family:'Manrope';flex-shrink:0;">—</div>
+          <div>
+            <h3 id="ddName" class="font-bold text-xl" style="font-family:'Manrope';color:var(--os);">—</h3>
+            <p id="ddDept" class="text-sm" style="color:var(--osv);">—</p>
+            <div style="display:flex;align-items:center;gap:.25rem;margin-top:.2rem;">
+              <span class="mif" style="font-size:.85rem;color:#f59e0b;">star</span>
+              <span id="ddRating" class="text-xs font-bold" style="color:var(--osv);">—</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.5rem;">
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <span id="avLbl" class="text-xs font-bold" style="color:var(--osv);">Unavailable</span>
+            <div onclick="toggleAvail()" id="avTog" class="w-12 h-6 rounded-full relative cursor-pointer transition-all p-1 flex items-center" style="background:var(--ov);">
+              <div class="knob w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"></div>
+            </div>
+          </div>
+          <span id="pausedTag" class="hidden text-xs font-bold px-3 py-1 rounded-full" style="background:var(--tf);color:var(--err);">⏸ Queue Paused</span>
+        </div>
+      </div>
+    </div>
+    <!-- Stats -->
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;margin-bottom:1.25rem;" class="md:grid-cols-4">
+      <div class="rounded-2xl p-4" style="background:var(--pf);">
+        <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#004786;margin-bottom:.2rem;">Current</p>
+        <h4 id="sCur" class="font-bold text-2xl" style="font-family:'Manrope';color:var(--pri);">—</h4>
+      </div>
+      <div class="rounded-2xl p-4" style="background:var(--scl);">
+        <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--osv);margin-bottom:.2rem;">Next</p>
+        <h4 id="sNxt" class="font-bold text-2xl" style="font-family:'Manrope';color:var(--os);">—</h4>
+      </div>
+      <div class="rounded-2xl p-4" style="background:var(--scl);">
+        <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--osv);margin-bottom:.2rem;">Queue</p>
+        <h4 id="sQlen" class="font-bold text-2xl" style="font-family:'Manrope';color:var(--os);">0</h4>
+      </div>
+      <div class="rounded-2xl p-4" style="background:#f0fdf4;">
+        <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#005312;margin-bottom:.2rem;">Seen Today</p>
+        <h4 id="sSeen" class="font-bold text-2xl" style="font-family:'Manrope';color:var(--sec);">0</h4>
+      </div>
+    </div>
+    <!-- Action Buttons -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
+      <button onclick="callNext()" id="callBtn" class="py-4 rounded-2xl grad text-white font-bold text-base flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95" style="font-family:'Manrope';">
+        <span class="mi text-xl">arrow_forward</span>Call Next
+      </button>
+      <button onclick="togglePause()" id="pauseBtn" class="py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 transition-all active:scale-95" style="background:var(--scl);color:var(--os);font-family:'Manrope';">
+        <span class="mi text-xl" id="pauseIco">pause</span><span id="pauseLbl">Pause Queue</span>
+      </button>
+    </div>
+    <!-- Queue Preview -->
+    <div class="rounded-3xl p-5" style="background:var(--scll);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+        <h3 class="font-bold" style="font-family:'Manrope';color:var(--os);">Queue Preview</h3>
+        <button onclick="go('docQueue')" class="text-xs font-bold" style="color:var(--pri);">View All →</button>
+      </div>
+      <div id="ddQprev" class="flex flex-col gap-2"></div>
+    </div>
+  </div>
+  <div id="ddEmpty" class="text-center py-16 text-sm" style="color:var(--osv);">Select your profile above to get started.</div>
+</div>
+
+<!-- PAGE: DOCTOR FULL QUEUE -->
+<div id="page-docQueue" class="page fade-in" style="padding:1.75rem 1.25rem;max-width:60rem;margin:0 auto;">
+  <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem;">
+    <button onclick="go('docDash')" class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:var(--scl);color:var(--pri);"><span class="mi">arrow_back</span></button>
+    <h2 class="font-bold text-2xl" style="font-family:'Manrope';color:var(--os);">Full Queue</h2>
+  </div>
+  <div id="fqList" class="flex flex-col gap-3"></div>
+</div>
+
+<!-- PAGE: UNAVAILABLE -->
+<div id="page-unavail" class="page fade-in" style="min-height:calc(100vh-64px);">
+  <div style="min-height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center;padding:2rem 1.25rem;">
+    <div class="text-center" style="max-width:22rem;width:100%;">
+      <div class="w-20 h-20 rounded-3xl mx-auto mb-5 flex items-center justify-center" style="background:var(--tf);">
+        <span class="mif" style="font-size:2.5rem;color:var(--err);">person_off</span>
+      </div>
+      <h2 class="font-bold text-2xl mb-2" style="font-family:'Manrope';color:var(--os);">Doctor Not Available</h2>
+      <p class="text-sm mb-2" style="color:var(--osv);" id="unavMsg">This doctor is currently not taking appointments.</p>
+      <p class="text-xs mb-7 px-4" style="color:var(--osv);">Choose another doctor or check back later.</p>
+      <div class="flex flex-col gap-3">
+        <button onclick="go('doctors')" class="w-full py-3.5 rounded-2xl grad text-white font-bold text-sm shadow-md flex items-center justify-center gap-2" style="font-family:'Manrope';">
+          <span class="mi">groups</span>Choose Another Doctor
+        </button>
+        <button onclick="go('home')" class="w-full py-3.5 rounded-2xl font-bold text-sm" style="background:var(--scl);color:var(--os);font-family:'Manrope';">Try Later</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<!-- JOIN MODAL -->
+<div id="joinMod" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center hidden" style="background:rgba(0,0,0,.35);backdrop-filter:blur(4px);">
+  <div class="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-7 fade-in" style="background:var(--scll);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
+      <h3 class="font-bold text-xl" style="font-family:'Manrope';color:var(--os);">Join Queue</h3>
+      <button onclick="closeModal()" class="w-8 h-8 rounded-full flex items-center justify-center" style="background:var(--scl);color:var(--osv);"><span class="mi text-lg">close</span></button>
+    </div>
+    <div class="rounded-2xl p-4 mb-5" style="background:var(--scl);">
+      <div style="display:flex;align-items:center;gap:.75rem;">
+        <div id="mdInit" class="w-10 h-10 rounded-xl grad flex items-center justify-center text-white font-bold" style="font-family:'Manrope';flex-shrink:0;">—</div>
+        <div>
+          <p class="font-bold text-sm" style="color:var(--os);" id="mdName">—</p>
+          <p class="text-xs" style="color:var(--osv);" id="mdDept">—</p>
+        </div>
+        <div style="margin-left:auto;text-align:right;">
+          <p class="text-xs" style="color:var(--osv);">Est. Wait</p>
+          <p class="font-bold" style="font-family:'Manrope';color:var(--pri);" id="mdWait">—</p>
+        </div>
+      </div>
+    </div>
+    <div class="flex flex-col gap-4 mb-5">
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-widest mb-2" style="color:var(--osv);letter-spacing:.1em;">Full Name *</label>
+        <input id="jName" type="text" placeholder="e.g. Ravi Kumar" class="w-full h-12 rounded-xl px-4 text-sm font-medium border-2 transition-all" style="background:var(--scl);border-color:transparent;color:var(--os);"/>
+      </div>
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-widest mb-2" style="color:var(--osv);letter-spacing:.1em;">Mobile Number *</label>
+        <input id="jPhone" type="tel" placeholder="e.g. 9876543210" class="w-full h-12 rounded-xl px-4 text-sm font-medium border-2 transition-all" style="background:var(--scl);border-color:transparent;color:var(--os);"/>
+      </div>
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-widest mb-2" style="color:var(--osv);letter-spacing:.1em;">Visit Type</label>
+        <select id="jVisit" class="w-full h-12 rounded-xl px-4 text-sm font-medium border-2 transition-all appearance-none" style="background:var(--scl);border-color:transparent;color:var(--os);">
+          <option>General Consultation</option><option>Follow-up Visit</option><option>Test Review</option>
+        </select>
+      </div>
+    </div>
+    <button onclick="joinConfirm()" class="w-full py-4 rounded-2xl grad text-white font-bold text-base shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all" style="font-family:'Manrope';">
+      <span class="mi">confirmation_number</span>Confirm & Get Token
+    </button>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="fixed bottom-0 left-0 right-0 lg:hidden z-20 flex justify-around items-center px-2 py-2 border-t" style="backdrop-filter:blur(20px);background:rgba(255,255,255,.88);border-color:var(--scl);">
+  <div id="pBnav" style="display:flex;width:100%;justify-content:space-around;">
+    <button onclick="go('home')" id="bn-home" class="bnbtn flex flex-col items-center px-3 py-1.5 rounded-xl gap-0.5 transition-all">
+      <span class="mi" style="font-size:1.3rem;color:var(--osv);">search</span><span style="font-size:.55rem;font-weight:700;color:var(--osv);text-transform:uppercase;letter-spacing:.05em;">Find</span>
+    </button>
+    <button onclick="go('doctors')" id="bn-doctors" class="bnbtn flex flex-col items-center px-3 py-1.5 rounded-xl gap-0.5 transition-all">
+      <span class="mi" style="font-size:1.3rem;color:var(--osv);">groups</span><span style="font-size:.55rem;font-weight:700;color:var(--osv);text-transform:uppercase;letter-spacing:.05em;">Doctors</span>
+    </button>
+    <button onclick="go('myqueue')" id="bn-myqueue" class="bnbtn flex flex-col items-center px-3 py-1.5 rounded-xl gap-0.5 transition-all relative">
+      <span class="mi" style="font-size:1.3rem;color:var(--osv);">confirmation_number</span><span style="font-size:.55rem;font-weight:700;color:var(--osv);text-transform:uppercase;letter-spacing:.05em;">My Queue</span>
+      <span id="bnBadge" class="hidden absolute -top-0.5 right-1.5 w-4 h-4 rounded-full grad text-white flex items-center justify-center" style="font-size:.5rem;font-weight:700;">1</span>
+    </button>
+  </div>
+  <div id="dBnav" style="display:none;width:100%;justify-content:space-around;">
+    <button onclick="go('docDash')" id="bn-docDash" class="bnbtn flex flex-col items-center px-3 py-1.5 rounded-xl gap-0.5 transition-all">
+      <span class="mi" style="font-size:1.3rem;color:var(--osv);">dashboard</span><span style="font-size:.55rem;font-weight:700;color:var(--osv);text-transform:uppercase;letter-spacing:.05em;">Dashboard</span>
+    </button>
+    <button onclick="go('docQueue')" id="bn-docQueue" class="bnbtn flex flex-col items-center px-3 py-1.5 rounded-xl gap-0.5 transition-all">
+      <span class="mi" style="font-size:1.3rem;color:var(--osv);">queue</span><span style="font-size:.55rem;font-weight:700;color:var(--osv);text-transform:uppercase;letter-spacing:.05em;">Queue</span>
+    </button>
+  </div>
+</nav>
+
+<script>
+// ---- NAVIGATION ----
+const TITLES={home:'Find Hospital',doctors:'Doctors',myqueue:'My Queue',docDash:'Doctor Dashboard',docQueue:'Full Queue',unavail:'Not Available'};
+let joinTargetDoc = null;
+
+function go(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const el=document.getElementById('page-'+page);
+  if(el){el.classList.add('active');el.classList.add('fade-in');setTimeout(()=>el.classList.remove('fade-in'),400);}
+  document.getElementById('pgTitle').textContent=TITLES[page]||page;
+  APP.page=page;
+
+  // Sidebar active
+  document.querySelectorAll('.nbtn').forEach(b=>{
+    b.classList.remove('nav-act');b.style.color='var(--osv)';
+    b.querySelectorAll('.mi,.mif').forEach(i=>i.style.color='var(--osv)');
+  });
+  const nb=document.querySelector(`.nbtn[data-p="${page}"]`);
+  if(nb)nb.classList.add('nav-act');
+
+  // Bottom nav active
+  document.querySelectorAll('.bnbtn').forEach(b=>{
+    b.style.background='transparent';
+    b.querySelectorAll('span').forEach(s=>s.style.color='var(--osv)');
+  });
+  const bbn=document.getElementById('bn-'+page);
+  if(bbn){bbn.style.background='var(--scl)';bbn.querySelectorAll('span').forEach(s=>s.style.color='var(--pri)');}
+
+  if(page==='home')renderHosp();
+  if(page==='doctors')renderDocs();
+  if(page==='myqueue')renderMyQ();
+  if(page==='docDash')renderDD();
+  if(page==='docQueue')renderFQ();
+  window.scrollTo(0,0);
+}
+
+function setRole(r){
+  APP.role=r;
+  document.getElementById('ava').textContent=r==='patient'?'P':'D';
+  ['patient','doctor'].forEach(x=>{
+    const on=x===r;
+    const sb=document.getElementById(x==='patient'?'rP':'rD');
+    const mb=document.getElementById(x==='patient'?'mrP':'mrD');
+    if(sb){sb.className=`flex-1 py-2 rounded-xl text-xs font-bold transition-all${on?' tab-act':''}`;if(!on)sb.style.color='var(--osv)';else sb.style.color='';}
+    if(mb){mb.className=`flex-1 py-2 rounded-xl text-xs font-bold${on?' tab-act':''}`;if(!on)mb.style.color='var(--osv)';else mb.style.color='';}
+    const n=document.getElementById(x+'Nav');
+    if(n)n.classList.toggle('hidden',x!==r);
+  });
+  document.getElementById('pBnav').style.display=r==='patient'?'flex':'none';
+  document.getElementById('dBnav').style.display=r==='doctor'?'flex':'none';
+  if(r==='patient')go('home');else go('docDash');
+}
+
+// ---- HOSPITAL LIST ----
+function hFilter(f){
+  APP.hospFilter=f;
+  document.querySelectorAll('.fpill').forEach(p=>{p.style.background='var(--scl)';p.style.color='var(--osv)';p.classList.remove('pill-act');});
+  const fp=document.getElementById('hf-'+f);
+  if(fp){fp.style.background='var(--pri)';fp.style.color='white';}
+  renderHosp();
+}
+
+function renderHosp(){
+  const q=(document.getElementById('hSearch')?.value||'').toLowerCase();
+  let list=[...APP.hospitals];
+  const f=APP.hospFilter;
+  if(f==='open')list=list.filter(h=>h.open);
+  const dMap={cardiology:'Cardiology',pediatrics:'Pediatrics',ent:'ENT',neurology:'Neurology'};
+  if(dMap[f])list=list.filter(h=>h.depts.includes(dMap[f]));
+  if(q)list=list.filter(h=>h.name.toLowerCase().includes(q)||h.depts.some(d=>d.toLowerCase().includes(q)));
+
+  const el=document.getElementById('hospList');
+  if(!el)return;
+  if(!list.length){el.innerHTML=`<div style="text-align:center;padding:3rem 0;font-size:.875rem;color:var(--osv);">No hospitals found.</div>`;return;}
+
+  el.innerHTML=list.map(h=>{
+    const dc=APP.doctors.filter(d=>d.hid===h.id).length;
+    const av=APP.doctors.filter(d=>d.hid===h.id&&d.avail).length;
+    const dp=h.depts.slice(0,3).join(' · ')+(h.depts.length>3?` +${h.depts.length-3}`:'');
+    return `
+    <div class="hosp-c rounded-3xl p-5" style="background:var(--scll);box-shadow:0 2px 12px rgba(0,31,42,.05);" onclick="openHosp(${h.id})">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:1rem;">
+          <div class="w-12 h-12 rounded-2xl grad flex items-center justify-center text-white shadow-md" style="flex-shrink:0;">
+            <span class="mif" style="font-size:1.5rem;">local_hospital</span>
+          </div>
+          <div>
+            <h3 class="font-bold" style="font-family:'Manrope';color:var(--os);margin-bottom:.2rem;">${h.name}</h3>
+            <p style="font-size:.75rem;color:var(--osv);margin-bottom:.15rem;"><span class="mi" style="font-size:.85rem;">near_me</span> ${h.addr} · <b>${h.dist}</b></p>
+            <p style="font-size:.72rem;color:var(--osv);">${dp}</p>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.5rem;">
+          <span style="font-size:.7rem;font-weight:700;padding:.25rem .75rem;border-radius:9999px;background:${h.open?'#f0fdf4':'var(--ec)'};color:${h.open?'var(--sec)':'var(--err)'};">
+            ${h.open?'● Open':'● Closed'}
+          </span>
+          <div style="display:flex;align-items:center;gap:.2rem;">
+            <span class="mif" style="font-size:.8rem;color:#f59e0b;">star</span>
+            <span style="font-size:.72rem;font-weight:700;color:var(--osv);">${h.rating}</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--scl);">
+        <div style="display:flex;gap:1.25rem;font-size:.75rem;color:var(--osv);">
+          <span><b style="color:var(--os);">${dc}</b> Doctors</span>
+          <span><b style="color:var(--sec);">${av}</b> Available</span>
+        </div>
+        <button onclick="event.stopPropagation();openHosp(${h.id})" class="px-5 py-2 rounded-xl grad text-white text-xs font-bold shadow-sm active:scale-95 transition-all" style="font-family:'Manrope';">View Doctors →</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openHosp(id){
+  APP.selectedHospital=APP.hospitals.find(h=>h.id===id);
+  APP.deptFilter='all';
+  go('doctors');
+}
+
+// ---- DOCTORS LIST ----
+function renderDocs(){
+  const h=APP.selectedHospital;
+  document.getElementById('dpTitle').textContent=h?h.name:'All Doctors';
+  document.getElementById('dpSub').textContent=h?`${h.addr} · ${h.dist}`:'Select a doctor to join the queue';
+
+  const docs=h?APP.doctors.filter(d=>d.hid===h.id):APP.doctors;
+  const depts=['All',...new Set(docs.map(d=>d.dept))];
+
+  const dpEl=document.getElementById('deptPills');
+  if(dpEl){
+    dpEl.innerHTML=depts.map(dep=>{
+      const f=dep==='All'?'all':dep.toLowerCase();
+      const act=APP.deptFilter===f;
+      return `<button onclick="setDeptF('${f}')" class="flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all"
+        style="background:${act?'var(--pri)':'var(--scl)'};color:${act?'white':'var(--osv)'};font-family:'Manrope';">${dep}</button>`;
+    }).join('');
+  }
+
+  let filtered=docs;
+  if(APP.deptFilter!=='all')filtered=filtered.filter(d=>d.dept.toLowerCase()===APP.deptFilter);
+
+  const el=document.getElementById('docList');
+  if(!el)return;
+  if(!filtered.length){el.innerHTML=`<div style="text-align:center;padding:2.5rem 0;font-size:.875rem;color:var(--osv);">No doctors found.</div>`;return;}
+
+  el.innerHTML=filtered.map(d=>{
+    const qlen=d.queue.length;
+    const wait=APP.estWait(d.id,qlen);
+    const sl=!d.avail?'Unavailable':d.paused?'Paused':'Available';
+    const sc=!d.avail?'var(--err)':d.paused?'#d97706':'var(--sec)';
+    const sbg=!d.avail?'var(--ec)':d.paused?'#fef3c7':'#f0fdf4';
+    const ini=d.name.split(' ').map(w=>w[0]).join('').slice(0,2);
+    return `
+    <div class="doc-c rounded-3xl p-5 relative overflow-hidden" style="background:var(--scll);box-shadow:0 2px 10px rgba(0,31,42,.04);">
+      <div style="position:absolute;right:-1.5rem;top:-1.5rem;width:6rem;height:6rem;border-radius:9999px;background:var(--pri);opacity:.03;"></div>
+      <div style="display:flex;align-items:flex-start;gap:1rem;position:relative;z-index:1;">
+        <div class="w-12 h-12 rounded-2xl grad flex items-center justify-center text-white font-bold" style="font-family:'Manrope';font-size:1.1rem;flex-shrink:0;">${ini}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+            <div>
+              <h3 class="font-bold" style="font-family:'Manrope';color:var(--os);margin-bottom:.15rem;">${d.name}</h3>
+              <p style="font-size:.72rem;color:var(--osv);margin-bottom:.15rem;">
+                <span class="mi" style="font-size:.8rem;">${APP.deptIcon(d.dept)}</span> ${d.dept} · ${d.exp}
+              </p>
+              <div style="display:flex;align-items:center;gap:.25rem;">
+                <span class="mif" style="font-size:.8rem;color:#f59e0b;">star</span>
+                <span style="font-size:.72rem;font-weight:700;color:var(--osv);">${d.rating}</span>
+              </div>
+            </div>
+            <span style="font-size:.7rem;font-weight:700;padding:.3rem .8rem;border-radius:9999px;background:${sbg};color:${sc};flex-shrink:0;">${sl}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:1rem;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--scl);">
+            <span style="font-size:.72rem;color:var(--osv);"><span class="mi" style="font-size:.8rem;">group</span> <b style="color:var(--os);">${qlen}</b> in queue</span>
+            <span style="font-size:.72rem;color:var(--osv);"><span class="mi" style="font-size:.8rem;">schedule</span> ~<b style="color:var(--os);">${wait}m</b> wait</span>
+            <button onclick="tryJoin(${d.id})" class="ml-auto px-5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
+              style="background:${d.avail&&!d.paused?'var(--pri)':'var(--scl)'};color:${d.avail&&!d.paused?'white':'var(--osv)'};font-family:'Manrope';">
+              ${!d.avail?'Unavailable':d.paused?'Paused':'Join Queue'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setDeptF(f){APP.deptFilter=f;renderDocs();}
+
+// ---- JOIN QUEUE ----
+function tryJoin(did){
+  const d=APP.doc(did);
+  if(!d)return;
+  if(!d.avail){
+    document.getElementById('unavMsg').textContent=`${d.name} is currently not available. Please choose another doctor or try later.`;
+    go('unavail');return;
+  }
+  if(d.paused){toast(`${d.name}'s queue is paused. Please try again shortly.`,'warn');return;}
+  if(APP.myToken){toast('You already have an active token! Leave current queue first.','warn');return;}
+  joinTargetDoc=d;
+  document.getElementById('mdInit').textContent=d.name.split(' ').map(w=>w[0]).join('').slice(0,2);
+  document.getElementById('mdName').textContent=d.name;
+  document.getElementById('mdDept').textContent=d.dept;
+  document.getElementById('mdWait').textContent=`~${APP.estWait(did,d.queue.length)}m`;
+  document.getElementById('jName').value='';
+  document.getElementById('jPhone').value='';
+  document.getElementById('joinMod').classList.remove('hidden');
+}
+
+function closeModal(){document.getElementById('joinMod').classList.add('hidden');}
+
+function joinConfirm(){
+  const name=document.getElementById('jName').value.trim();
+  const phone=document.getElementById('jPhone').value.trim();
+  if(!name){toast('Please enter your name','warn');return;}
+  if(!phone){toast('Please enter your phone number','warn');return;}
+  const d=joinTargetDoc;
+  d.tc++;
+  const tk=d.tc;
+  d.queue.push({token:tk,name,phone,joinedAt:Date.now()});
+  if(!d.cur)d.cur=tk;
+  if(d.queue.length===2)d.nxt=tk;
+  APP.myToken={token:tk,docId:d.id,name,joinedAt:Date.now()};
+  showBadge(true);
+  closeModal();
+  toast(`Token #${tk} issued! You're position ${d.queue.findIndex(p=>p.token===tk)+1} in queue.`,'success');
+  go('myqueue');
+}
+
+// ---- MY QUEUE ----
+function renderMyQ(){
+  const has=!!APP.myToken;
+  document.getElementById('noTk').style.display=has?'none':'block';
+  document.getElementById('hasTk').style.display=has?'block':'none';
+  if(!has)return;
+  const {token,docId}=APP.myToken;
+  const d=APP.doc(docId);
+  if(!d)return;
+  const pos=d.queue.findIndex(p=>p.token===token);
+  if(pos===-1){leaveQ();return;}
+  const qlen=d.queue.length;
+  const ahead=pos;
+  const wait=APP.estWait(docId,ahead);
+  const prog=qlen>0?Math.max(5,Math.round(((qlen-ahead)/Math.max(qlen,1))*100)):5;
+  document.getElementById('tkNum').textContent=token;
+  document.getElementById('tkDoc').textContent=`${d.name} · ${d.dept}`;
+  document.getElementById('tkPos').textContent=pos===0?'Next!':`${pos+1}${ord(pos+1)}`;
+  document.getElementById('tkWait').textContent=ahead===0?'< 1m':`~${wait}m`;
+  document.getElementById('tkServ').textContent=d.cur||'—';
+  document.getElementById('pgBar').style.width=prog+'%';
+  document.getElementById('pgPct').textContent=prog+'%';
+  const steps=[
+    {ico:'check_circle',lbl:'Checked In',sub:'Token issued successfully',done:true},
+    {ico:pos===0?'notifications_active':'schedule',lbl:pos===0?'You\'re Next!':`${ahead} patient${ahead!==1?'s':''} ahead`,sub:pos===0?'Please proceed':'~'+wait+'m estimated',done:pos===0,act:pos>0},
+    {ico:'medical_services',lbl:'Consultation',sub:'With '+d.name,done:false}
+  ];
+  document.getElementById('tkTimeline').innerHTML=steps.map(s=>`
+    <div style="display:flex;align-items:center;gap:.75rem;">
+      <div style="width:1.75rem;height:1.75rem;border-radius:9999px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${s.done?'var(--sec)':s.act?'var(--pri)':'var(--scl)'};">
+        <span class="mif" style="font-size:.8rem;color:${s.done||s.act?'white':'var(--osv)'};">${s.ico}</span>
+      </div>
+      <div>
+        <p style="font-size:.75rem;font-weight:700;color:${s.done?'var(--sec)':s.act?'var(--pri)':'var(--osv)'};">${s.lbl}</p>
+        <p style="font-size:.65rem;color:var(--osv);">${s.sub}</p>
+      </div>
+    </div>`).join('');
+}
+
+function ord(n){const s=['th','st','nd','rd'];const v=n%100;return s[(v-20)%10]||s[v]||s[0];}
+
+function leaveQ(){
+  if(!APP.myToken)return;
+  const d=APP.doc(APP.myToken.docId);
+  if(d){d.queue=d.queue.filter(p=>p.token!==APP.myToken.token);syncDocTokens(d);}
+  APP.myToken=null;showBadge(false);
+  toast('You have left the queue.','info');
+  renderMyQ();
+}
+
+function showBadge(show){
+  document.getElementById('tkBadgeSb').classList.toggle('hidden',!show);
+  document.getElementById('bnBadge').classList.toggle('hidden',!show);
+}
+
+// ---- DOCTOR DASHBOARD ----
+function renderDD(){
+  const sel=document.getElementById('docSel');
+  if(!sel)return;
+  sel.innerHTML='<option value="">— Select Doctor Profile —</option>'+APP.doctors.map(d=>`<option value="${d.id}">${d.name} · ${d.dept}</option>`).join('');
+  if(APP.activeDoctorId){sel.value=APP.activeDoctorId;showDDContent();}
+  else{document.getElementById('ddContent').classList.add('hidden');document.getElementById('ddEmpty').classList.remove('hidden');}
+}
+
+function pickDoc(){
+  const v=parseInt(document.getElementById('docSel').value);
+  if(!v){APP.activeDoctorId=null;document.getElementById('ddContent').classList.add('hidden');document.getElementById('ddEmpty').classList.remove('hidden');return;}
+  APP.activeDoctorId=v;showDDContent();
+}
+
+function showDDContent(){
+  document.getElementById('ddContent').classList.remove('hidden');
+  document.getElementById('ddEmpty').classList.add('hidden');
+  refreshDD();
+}
+
+function refreshDD(){
+  const d=APP.doc(APP.activeDoctorId);if(!d)return;
+  document.getElementById('ddInit').textContent=d.name.split(' ').map(w=>w[0]).join('').slice(0,2);
+  document.getElementById('ddName').textContent=d.name;
+  document.getElementById('ddDept').textContent=d.dept+' · '+d.exp+' exp';
+  document.getElementById('ddRating').textContent=d.rating;
+  document.getElementById('avLbl').textContent=d.avail?'Available':'Unavailable';
+  document.getElementById('avLbl').style.color=d.avail?'var(--sec)':'var(--err)';
+  const tog=document.getElementById('avTog');
+  tog.classList.toggle('tog-on',d.avail);
+  tog.style.background=d.avail?'var(--sec)':'var(--ov)';
+  document.getElementById('pausedTag').classList.toggle('hidden',!d.paused);
+  document.getElementById('sCur').textContent=d.cur||'—';
+  document.getElementById('sNxt').textContent=d.queue[1]?.token||'—';
+  document.getElementById('sQlen').textContent=d.queue.length;
+  document.getElementById('sSeen').textContent=d.seen;
+  const pb=document.getElementById('pauseBtn');
+  document.getElementById('pauseIco').textContent=d.paused?'play_arrow':'pause';
+  document.getElementById('pauseLbl').textContent=d.paused?'Resume Queue':'Pause Queue';
+  pb.style.background=d.paused?'#fef3c7':'var(--scl)';
+  pb.style.color=d.paused?'#d97706':'var(--os)';
+  // Queue preview
+  const pv=document.getElementById('ddQprev');
+  if(!pv)return;
+  if(!d.queue.length){pv.innerHTML=`<p style="font-size:.75rem;text-align:center;padding:.75rem 0;color:var(--osv);">Queue is empty</p>`;return;}
+  pv.innerHTML=d.queue.slice(0,4).map((p,i)=>`
+    <div class="qi" style="display:flex;align-items:center;gap:.75rem;padding:.75rem;border-radius:1rem;background:${i===0?'rgba(0,93,172,.07)':'var(--scl)'};">
+      <span class="font-bold text-lg" style="font-family:'Manrope';color:${i===0?'var(--pri)':'var(--os)'};width:3rem;flex-shrink:0;">${p.token}</span>
+      <div style="flex:1;min-width:0;">
+        <p style="font-size:.75rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--os);">${p.name}</p>
+        <p style="font-size:.65rem;color:var(--osv);">~${APP.estWait(d.id,i)}m wait</p>
+      </div>
+      ${i===0?`<span style="font-size:.65rem;font-weight:700;padding:.2rem .6rem;border-radius:9999px;background:var(--pri);color:white;">Current</span>`:''}
+    </div>`).join('');
+}
+
+function toggleAvail(){
+  const d=APP.doc(APP.activeDoctorId);if(!d)return;
+  d.avail=!d.avail;
+  if(!d.avail)d.paused=false;
+  toast(`${d.name} is now ${d.avail?'Available':'Unavailable'}`,d.avail?'success':'warn');
+  refreshDD();
+  if(APP.page==='docQueue')renderFQ();
+}
+
+function togglePause(){
+  const d=APP.doc(APP.activeDoctorId);
+  if(!d||!d.avail){toast('Set yourself as available first','warn');return;}
+  d.paused=!d.paused;
+  toast(d.paused?'Queue paused. No new patients can join.':'Queue resumed!',d.paused?'warn':'success');
+  refreshDD();
+}
+
+function callNext(){
+  const d=APP.doc(APP.activeDoctorId);
+  if(!d||!d.avail){toast('Set yourself as available to call patients','warn');return;}
+  if(d.paused){toast('Resume queue first','warn');return;}
+  if(!d.queue.length){toast('Queue is empty','info');return;}
+  const served=d.queue.shift();
+  d.seen++;
+  syncDocTokens(d);
+  if(APP.myToken&&APP.myToken.token===served.token){
+    toast(`Token #${served.token} called! Please proceed to ${d.dept}.`,'success');
+    APP.myToken=null;showBadge(false);
+    if(APP.page==='myqueue')renderMyQ();
+  }
+  toast(`Token #${served.token} called — ${served.name}`,'success');
+  refreshDD();
+  if(APP.page==='myqueue'&&APP.myToken?.docId===d.id)renderMyQ();
+  if(APP.page==='docQueue')renderFQ();
+}
+
+function syncDocTokens(d){d.cur=d.queue[0]?.token||null;d.nxt=d.queue[1]?.token||null;}
+
+function renderFQ(){
+  const d=APP.doc(APP.activeDoctorId);
+  const el=document.getElementById('fqList');
+  if(!el)return;
+  if(!d){el.innerHTML=`<p style="text-align:center;padding:2rem;font-size:.875rem;color:var(--osv);">Select a doctor in Dashboard first.</p>`;return;}
+  if(!d.queue.length){el.innerHTML=`<div style="text-align:center;padding:4rem 0;"><span class="mi" style="font-size:2.5rem;color:var(--ov);display:block;margin-bottom:.5rem;">queue</span><p style="font-size:.875rem;color:var(--osv);">Queue is empty</p></div>`;return;}
+  el.innerHTML=d.queue.map((p,i)=>`
+    <div class="qi" style="display:flex;align-items:center;gap:1rem;padding:1rem;border-radius:1rem;background:${i===0?'rgba(0,93,172,.07)':'var(--scll)'};box-shadow:0 1px 4px rgba(0,31,42,.04);">
+      <div style="width:2rem;height:2rem;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0;background:${i===0?'var(--pri)':'var(--scl)'};color:${i===0?'white':'var(--osv)'};">${i+1}</div>
+      <span class="font-bold text-xl" style="font-family:'Manrope';color:${i===0?'var(--pri)':'var(--os)'};width:3.5rem;flex-shrink:0;">${p.token}</span>
+      <div style="flex:1;min-width:0;">
+        <p style="font-size:.875rem;font-weight:500;color:var(--os);">${p.name}</p>
+        <p style="font-size:.7rem;color:var(--osv);">Joined ${tAgo(p.joinedAt)} · ~${APP.estWait(d.id,i)}m wait</p>
+      </div>
+      ${i===0
+        ?`<button onclick="callNext()" class="px-4 py-2 rounded-xl grad text-white text-xs font-bold active:scale-95 transition-all" style="font-family:'Manrope';">Call Now</button>`
+        :`<button onclick="rmFromQ(${p.token})" class="px-4 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all" style="background:var(--ec);color:var(--err);font-family:'Manrope';">Remove</button>`}
+    </div>`).join('');
+}
+
+function rmFromQ(tk){
+  const d=APP.doc(APP.activeDoctorId);if(!d)return;
+  d.queue=d.queue.filter(p=>p.token!==tk);syncDocTokens(d);
+  if(APP.myToken&&APP.myToken.token===tk){APP.myToken=null;showBadge(false);}
+  toast(`Token #${tk} removed`,'info');
+  renderFQ();refreshDD();
+}
+
+// ---- HELPERS ----
+function tAgo(ts){const m=Math.floor((Date.now()-ts)/60000);if(m<1)return'just now';if(m<60)return`${m}m ago`;return`${Math.floor(m/60)}h ago`;}
+
+function toast(msg,type='info'){
+  const t=document.getElementById('toastEl');
+  const inn=document.getElementById('toastIn');
+  const ico=document.getElementById('toastIco');
+  const m=document.getElementById('toastMsg');
+  const c={success:{bg:'#f0fdf4',col:'var(--sec)',border:'#86efac',ico:'check_circle'},
+    warn:{bg:'#fffbeb',col:'#d97706',border:'#fcd34d',ico:'warning'},
+    info:{bg:'var(--scll)',col:'var(--pri)',border:'var(--pfd)',ico:'info'},
+    error:{bg:'var(--ec)',col:'var(--err)',border:'var(--tfd)',ico:'error'}}[type]||{};
+  inn.style.background=c.bg;inn.style.borderColor=c.border;
+  ico.textContent=c.ico;ico.style.color=c.col;
+  m.textContent=msg;m.style.color=c.col;
+  t.classList.remove('hidden');t.classList.add('notif');
+  clearTimeout(APP._nt);
+  APP._nt=setTimeout(()=>{t.classList.add('hidden');t.classList.remove('notif');},3500);
+}
+
+// ---- CLOCK ----
+function updateClk(){
+  const el=document.getElementById('clk');if(!el)return;
+  const n=new Date();
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  el.textContent=`${days[n.getDay()]} ${mo[n.getMonth()]} ${n.getDate()} · ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
+}
+updateClk();setInterval(updateClk,1000);
+
+// ---- REAL-TIME SIM ----
+setInterval(()=>{
+  APP.doctors.forEach(d=>{
+    if(d.avail&&!d.paused&&d.queue.length>0&&Math.random()<0.025){
+      const srv=d.queue.shift();d.seen++;syncDocTokens(d);
+      if(APP.myToken&&APP.myToken.token===srv.token&&APP.myToken.docId===d.id){
+        toast(`🔔 Token #${srv.token} called! Please proceed to ${d.dept}.`,'success');
+        APP.myToken=null;showBadge(false);
+        if(APP.page==='myqueue')renderMyQ();
+      }
+      if(APP.activeDoctorId===d.id){if(APP.page==='docDash')refreshDD();if(APP.page==='docQueue')renderFQ();}
+      if(APP.page==='myqueue'&&APP.myToken?.docId===d.id)renderMyQ();
+    }
+  });
+},9000);
+
+// ---- MOBILE MENU ----
+function openMobileMenu(){
+  const s=document.getElementById('mSb');const o=document.getElementById('mOv');
+  s.classList.remove('hidden');s.style.display='flex';s.style.flexDirection='column';
+  o.classList.remove('hidden');
+  const links=APP.role==='patient'
+    ?[{p:'home',i:'search',l:'Find Hospital'},{p:'doctors',i:'groups',l:'Doctors'},{p:'myqueue',i:'confirmation_number',l:'My Queue'}]
+    :[{p:'docDash',i:'dashboard',l:'Dashboard'},{p:'docQueue',i:'queue',l:'Queue'}];
+  document.getElementById('mNavLinks').innerHTML=links.map(lk=>`
+    <button onclick="go('${lk.p}');closeMobileMenu()" style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-radius:.75rem;width:100%;text-align:left;color:var(--osv);font-size:.875rem;">
+      <span class="mi">${lk.i}</span><span style="font-weight:500;">${lk.l}</span>
+    </button>`).join('');
+  setTimeout(()=>s.style.transform='translateX(0)',10);
+}
+function closeMobileMenu(){
+  const s=document.getElementById('mSb');const o=document.getElementById('mOv');
+  s.style.transform='translateX(-100%)';
+  setTimeout(()=>{s.style.display='none';s.classList.add('hidden');o.classList.add('hidden');},280);
+}
+
+// ---- INIT ----
+setRole('patient');
+go('home');
+</script>
+</body>
+</html>
